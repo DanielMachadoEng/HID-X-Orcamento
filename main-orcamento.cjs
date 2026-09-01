@@ -3,8 +3,8 @@ const path = require('node:path');
 const fs = require('node:fs');
 
 const APP_TITLE = 'HID X — Orçamento e Dashboard';
-const APP_VERSION = '1.1.2';
-const APP_FILE = 'HID X ORCAMENTO PROTOTIPO.html';
+const APP_VERSION = '1.1.3';
+const APP_FILE = 'index.html';
 const EM_TESTE = process.env.HIDX_SMOKE_TEST === '1';
 const ARQUIVO_TESTE = process.env.HIDX_SMOKE_RESULT || '';
 const PLANILHA_TESTE = process.env.HIDX_SMOKE_XLSX || '';
@@ -55,8 +55,8 @@ function criarJanela() {
           orcamentoCarregado: Boolean(window.HIDXOrcamento),
           catalogoCarregado: Number(window.SICRO_CATALOGO?.servicos?.length || 0),
           consumosCarregados: Number(window.IPR736_CONSUMOS?.dispositivos?.length || 0),
-          modulosVisiveis: [...document.querySelectorAll('.modulo-link')].map((item) => item.dataset.id),
-          disciplinasVisiveis: [...document.querySelectorAll('.grupo-nav')].map((item) => item.dataset.disciplina)
+          modulosVisiveis: [...document.querySelectorAll('.disciplina-toggle[data-id]')].map((item) => item.dataset.id),
+          disciplinasVisiveis: [...document.querySelectorAll('.grupo-nav')].map((item) => item.dataset.modulo)
         })`, true);
         if (PLANILHA_TESTE) {
           const conteudo = fs.readFileSync(PLANILHA_TESTE).toString('base64');
