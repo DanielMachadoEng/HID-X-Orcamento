@@ -940,17 +940,23 @@
     indice.get(chave).push(servico);
   }
 
+  function adicionarTodos(conjunto, lista) {
+    for (const item of lista || []) conjunto.add(item);
+  }
+
   function criarIndiceCatalogo(servicos) {
     const indice = {
       token: new Map(),
       radical: new Map(),
       prefixo: new Map(),
       unidade: new Map(),
+      sigla: new Map(),
       identificador: new Map(),
       compacto: new Map(),
     };
     for (const servico of servicos) {
       adicionarAoIndice(indice.unidade, chaveUnidade(servico.unidade), servico);
+      adicionarAoIndice(indice.sigla, servico.identificadorDispositivo?.sigla, servico);
       for (const chave of chavesIdentificador(servico.identificadorDispositivo)) adicionarAoIndice(indice.identificador, chave, servico);
       for (const chave of chavesCompactasIdentificador(servico.identificadorDispositivo)) adicionarAoIndice(indice.compacto, chave, servico);
       for (const token of new Set(servico.tokensPesquisa)) {
@@ -964,9 +970,8 @@
 
   function candidatosPorIdentificador(valor, unidadeInformada = '') {
     const encontrados = new Set();
-    const adicionar = (lista) => { for (const servico of lista || []) encontrados.add(servico); };
     const identificador = extrairIdentificadorDispositivo(valor);
-    for (const chave of chavesIdentificador(identificador)) adicionar(indiceCatalogo.identificador.get(chave));
+    for (const chave of chavesIdentificador(identificador)) adicionarTodos(encontrados, indiceCatalogo.identificador.get(chave));
 
     const tokens = normalizar(valor).split(' ').filter(Boolean);
     for (let inicio = 0; inicio < tokens.length; inicio += 1) {
@@ -981,7 +986,7 @@
         const assinaturas = new Set(lista.map((servico) => servico.identificadorDispositivo?.chaveCanonica).filter(Boolean));
         if (assinaturas.size === 1) melhor = lista;
       }
-      adicionar(melhor);
+      adicionarTodos(encontrados, melhor);
     }
 
     const unidade = chaveUnidade(unidadeInformada);
@@ -992,7 +997,7 @@
   function candidatosPorPrefixoIdentificador(valor, unidadeInformada = '') {
     const identificador = extrairIdentificadorDispositivo(valor);
     if (!identificador?.partesCanonicas.length) return [];
-    const candidatos = catalogo.filter((servico) => {
+    const candidatos = (indiceCatalogo.sigla.get(identificador.sigla) || []).filter((servico) => {
       const candidato = servico.identificadorDispositivo;
       if (!candidato || candidato.sigla !== identificador.sigla) return false;
       if (candidato.partesCanonicas.length <= identificador.partesCanonicas.length) return false;
@@ -1017,11 +1022,10 @@
 
   function candidatosIndexados(tokens, unidadeInformada = '') {
     const encontrados = new Set();
-    const adicionar = (lista) => { for (const servico of lista || []) encontrados.add(servico); };
     for (const token of tokens) {
-      adicionar(indiceCatalogo.token.get(token));
-      adicionar(indiceCatalogo.radical.get(radicalToken(token)));
-      if (token.length >= 4 && !/^\d+$/.test(token)) adicionar(indiceCatalogo.prefixo.get(token.slice(0, 3)));
+      adicionarTodos(encontrados, indiceCatalogo.token.get(token));
+      adicionarTodos(encontrados, indiceCatalogo.radical.get(radicalToken(token)));
+      if (token.length >= 4 && !/^\d+$/.test(token)) adicionarTodos(encontrados, indiceCatalogo.prefixo.get(token.slice(0, 3)));
     }
     let base = encontrados.size ? [...encontrados] : catalogo;
     const unidade = chaveUnidade(unidadeInformada);
@@ -1904,19 +1908,6 @@
         const item = grupo.item;
         return `<tr><td class="center">${grupo.posicao}</td><td class="center"><span class="orc-abc-badge ${grupo.classe.toLowerCase()}">${grupo.classe}</span></td><td class="center"><code>${escapeHtml(item.selecionado.codigo)}</code></td><td class="desc">${escapeHtml(item.selecionado.descricao)}</td><td class="center">${escapeHtml(item.selecionado.unidade)}</td><td class="num">${numero.format(item.quantidade)}</td><td class="num">${moeda.format(valorComBdi(item))}</td><td class="num"><strong>${moeda.format(grupo.valor)}</strong></td><td class="num">${percentual.format(grupo.participacao)}</td><td class="num">${percentual.format(grupo.acumulado)}</td></tr>`;
       }).join('')}</tbody>`;
-  }
-
-  function barrasDashboard(dados, formatador, classe = '') {
-    if (!dados.length) return '<div class="orc-dash-empty" style="min-height:150px"><div><strong>Sem dados para este gr\u00e1fico</strong><span>Os valores aparecer\u00e3o ap\u00f3s a importa\u00e7\u00e3o e a confirma\u00e7\u00e3o dos servi\u00e7os.</span></div></div>';
-    const maior = Math.max(...dados.map((item) => Number(item.valor || 0)), 1);
-    return `<div class="orc-dash-bars" role="img" aria-label="Gr\u00e1fico de barras com ${dados.length} itens">${dados.map((item) => {
-      const proporcao = Math.max(0, Math.min(100, Number(item.valor || 0) / maior * 100));
-      return `<div class="orc-dash-bar-row" title="${escapeHtml(`${item.rotulo}: ${formatador(item.valor)}`)}">
-        <span class="orc-dash-bar-label">${escapeHtml(item.rotulo)}</span>
-        <span class="orc-dash-bar-track"><span class="orc-dash-bar-fill ${classe}" style="width:${proporcao.toFixed(2)}%"></span></span>
-        <span class="orc-dash-bar-value">${escapeHtml(formatador(item.valor))}</span>
-      </div>`;
-    }).join('')}</div>`;
   }
 
   function vazioGraficoDashboard(titulo, mensagem) {

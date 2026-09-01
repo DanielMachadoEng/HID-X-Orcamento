@@ -8,6 +8,7 @@ Requer Node.js e pnpm.
 
 ```powershell
 pnpm install
+pnpm sync:runtime
 pnpm check
 pnpm test
 pnpm start
