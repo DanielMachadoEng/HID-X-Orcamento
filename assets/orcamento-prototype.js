@@ -18,6 +18,9 @@
     ['EDA', 'Entrada para descida de \u00e1gua'],
     ['CPV', 'Chamin\u00e9 de po\u00e7o de visita'],
     ['PEAD', 'Tubo PEAD para drenagem'],
+    ['BSTC', 'Bueiro simples tubular de concreto'],
+    ['BDTC', 'Bueiro duplo tubular de concreto'],
+    ['BTTC', 'Bueiro triplo tubular de concreto'],
   ]);
   const CHAVE_PREFERENCIAS = 'hidx-orcamento-correspondencias-v1';
   const TERMOS_EQUIVALENTES = new Map([
@@ -27,6 +30,41 @@
     ['TUB', ['TUBO']],
     ['TUBULACAO', ['TUBO']],
     ['MEIOFIO', ['MEIO', 'FIO']],
+    ['ALA', ['BOCA']],
+    ['ALAS', ['BOCA']],
+  ]);
+  const CODIGOS_LEGADOS_IPR = new Map([
+    ['DCD02', 'DCD 60-30'],
+    ['DCD04', 'DCD 80-40'],
+    ['DAR03', 'DAR 60-30'],
+    ['DAD02', 'DAD 60-36'],
+    ['DAD04', 'DAD 110-26'],
+    ['DAD06', 'DAD 125-30'],
+    ['DAD16', 'DAD 370-45'],
+    ['DEB03', 'DEB 180-263'],
+    ['DEB04', 'DEB 240-316'],
+    ['VPC03', 'VPCC 160-30'],
+    ['CCS01', 'CCS 200-60'],
+    ['CCS02', 'CCS 200-80'],
+    ['CCS05', 'CCS 250-60'],
+    ['CCS06', 'CCS 250-80'],
+    ['CCS09', 'CCS 300-60'],
+    ['CCS10', 'CCS 300-80'],
+    ['CCS01A', 'CCS 200-60 A'],
+    ['CCS01B', 'CCS 200-60 B'],
+    ['CCS02A', 'CCS 200-80 A'],
+    ['CCS02B', 'CCS 200-80 B'],
+    ['CCS05A', 'CCS 250-60 A'],
+    ['CCS05B', 'CCS 250-60 B'],
+    ['CCS06A', 'CCS 250-80 A'],
+    ['CCS06B', 'CCS 250-80 B'],
+    ['CCS09A', 'CCS 300-60 A'],
+    ['CCS09B', 'CCS 300-60 B'],
+    ['CCS10A', 'CCS 300-80 A'],
+    ['CCS10B', 'CCS 300-80 B'],
+  ]);
+  const CODIGOS_EXCLUIDOS_IPR = new Set([
+    'DEB01', 'DEB02', 'STC02', 'STC03', 'STC04', 'STC06', 'STC07', 'STC08', 'TSS1', 'TSS01', 'TSS2', 'TSS02',
   ]);
   const catalogo = (BASE.servicos || []).map((servico) => {
     const descricaoNormalizada = normalizar(servico.descricao);
@@ -83,8 +121,29 @@
     return indice;
   })();
 
+  const indiceConsumosIprCompacto = (() => {
+    const candidatos = new Map();
+    for (const dispositivo of BASE_CONSUMOS.dispositivos || []) {
+      for (const nome of [dispositivo.codigo, ...(dispositivo.aliases || [])]) {
+        const identificador = extrairIdentificadorDispositivo(nome);
+        for (const chave of chavesCompactasIdentificador(identificador)) {
+          if (!candidatos.has(chave)) candidatos.set(chave, dispositivo);
+          else if (candidatos.get(chave)?.codigo !== dispositivo.codigo) candidatos.set(chave, null);
+        }
+      }
+    }
+    return new Map([...candidatos].filter(([, dispositivo]) => dispositivo));
+  })();
+
+  function compactarCodigoDispositivo(valor) {
+    return normalizar(valor).split(' ').filter((token) => !['X', 'VEZES', 'POR'].includes(token))
+      .join('').replace(/(?<=\d)X(?=\d)/g, '');
+  }
+
   function buscarConsumoIpr(dispositivo) {
-    return indiceConsumosIpr.get(normalizar(dispositivo)) || null;
+    const exato = indiceConsumosIpr.get(normalizar(dispositivo));
+    if (exato) return exato;
+    return indiceConsumosIprCompacto.get(compactarCodigoDispositivo(dispositivo)) || null;
   }
 
   function canonicalizarDispositivoNota(dispositivo) {
@@ -267,7 +326,7 @@
     let categoriaAtual = 'Resumo geral';
     let cabecalhoQuantidade = 'QUANTIDADE';
     const categorias = new Set();
-    const limite = Math.min(Number(planilha.rowCount || 0), 500);
+    const limite = Number(planilha.rowCount || 0);
 
     for (let linha = 1; linha <= limite; linha += 1) {
       const nome = String(textoCelula(planilha.getCell(linha, 2)) || '').trim();
@@ -325,10 +384,14 @@
 
   function ehAbaNotaServico(planilha) {
     if (!planilha) return false;
-    for (let linha = 1; linha <= Math.min(6, Number(planilha.rowCount || 0)); linha += 1) {
+    const nomeAba = normalizar(planilha.name);
+    const temaDrenagem = ['DRENAGEM', 'LINEAR', 'REDE', 'CAIXA', 'ENTRADA', 'DESCIDA', 'DISSIPADOR', 'BUEIRO', 'VALETA', 'TSS']
+      .some((termo) => nomeAba.includes(termo));
+    for (let linha = 1; linha <= Math.min(20, Number(planilha.rowCount || 0)); linha += 1) {
       for (let coluna = 1; coluna <= Math.min(12, Number(planilha.columnCount || 0)); coluna += 1) {
         const texto = normalizar(textoCelula(planilha.getCell(linha, coluna)));
-        if (texto.includes('NOTAS DE SERVICO DE DRENAGEM')) return true;
+        const tituloNota = texto.includes('NOTA DE SERVICO') || texto.includes('NOTAS DE SERVICO');
+        if (tituloNota && (texto.includes('DRENAGEM') || temaDrenagem)) return true;
       }
     }
     return false;
@@ -338,17 +401,25 @@
     const nome = normalizar(nomeAba);
     if (nome.includes('LINEARES') || nome.includes('TRANSPOSICOES')) return 'Meio-fio e sarjetas';
     if (nome.includes('VPCC') || nome.includes('VALETA')) return 'Valetas de prote\u00e7\u00e3o';
+    if (nome.includes('BUEIRO')) return 'Bueiros';
     if (nome.includes('REDES')) return 'Drenagem subterr\u00e2nea';
     if (nome.includes('ENTRADA')) return 'Des\u00e1gues de \u00e1guas pluviais';
-    if (nome.includes('CAIXAS') || nome.includes('CHAMINE') || nome.includes('POCO DE VISITA')) return 'Caixas e estruturas';
+    if (nome.includes('CAIXA') || nome.includes('CHAMINE') || nome.includes('POCO DE VISITA')) return 'Caixas e estruturas';
     return 'Outros servi\u00e7os';
+  }
+
+  function pareceDispositivoNota(valor) {
+    const marcador = normalizar(valor);
+    if (!marcador || marcador === '-' || ['TOTAL', 'TOTAIS', 'TIPO', 'SERVICO'].includes(marcador)) return false;
+    if (!/[A-Z]/.test(marcador)) return false;
+    return /\d/.test(marcador) || ['STC', 'BSTC', 'BDTC', 'BTTC'].includes(marcador);
   }
 
   function adicionarMedicaoNota(mapa, dispositivo, quantidade, unidadePrincipal, planilha, linha, categoria) {
     const nomeOriginal = String(dispositivo || '').trim();
     const valor = paraNumero(quantidade);
     const marcador = normalizar(nomeOriginal);
-    if (!nomeOriginal || !Number.isFinite(valor) || valor <= 0 || ['TOTAL', 'TOTAIS'].includes(marcador) || nomeOriginal === '-') return;
+    if (!nomeOriginal || !pareceDispositivoNota(nomeOriginal) || !Number.isFinite(valor) || valor <= 0 || ['TOTAL', 'TOTAIS'].includes(marcador) || nomeOriginal === '-') return;
     const nome = canonicalizarDispositivoNota(nomeOriginal);
     const chave = `${normalizar(nome)}|${unidadePrincipal}`;
     const atual = mapa.get(chave) || {
@@ -360,9 +431,12 @@
       unidadePrincipal,
       rotuloQuantidade: unidadePrincipal === 'm' ? 'EXTENS\u00c3O' : 'QUANTIDADE',
       abasOrigem: new Set(),
+      quantidadesPorCategoria: new Map(),
     };
     atual.quantidade += valor;
     atual.abasOrigem.add(planilha.name);
+    atual.quantidadesPorCategoria.set(categoria, (atual.quantidadesPorCategoria.get(categoria) || 0) + valor);
+    if (atual.quantidadesPorCategoria.size > 1) atual.categoria = 'Categorias diversas';
     mapa.set(chave, atual);
   }
 
@@ -431,6 +505,119 @@
     }
   }
 
+  function extrairCaixasNota(planilha, mapa, categoria) {
+    let cabecalho = null;
+    for (let linha = 1; linha <= Math.min(10, Number(planilha.rowCount || 0)) && !cabecalho; linha += 1) {
+      for (let coluna = 1; coluna <= Math.min(20, Number(planilha.columnCount || 0)); coluna += 1) {
+        if (normalizar(textoCelula(planilha.getCell(linha, coluna))).includes('PROJETO TIPO')) {
+          cabecalho = { linha, coluna };
+          break;
+        }
+      }
+    }
+    if (!cabecalho) {
+      extrairEstruturasNota(planilha, mapa, categoria);
+      return;
+    }
+    let vazias = 0;
+    for (let linha = cabecalho.linha + 1; linha <= Number(planilha.rowCount || 0); linha += 1) {
+      const dispositivo = textoCelula(planilha.getCell(linha, cabecalho.coluna));
+      if (!String(dispositivo || '').trim()) {
+        vazias += 1;
+        if (vazias >= 40) break;
+        continue;
+      }
+      vazias = 0;
+      adicionarMedicaoNota(mapa, dispositivo, 1, 'un', planilha, linha, categoria);
+    }
+  }
+
+  function extrairEntradasNota(planilha, mapa, categoria) {
+    let linhaCabecalho = 0;
+    const inicios = [];
+    for (let linha = 1; linha <= Math.min(10, Number(planilha.rowCount || 0)); linha += 1) {
+      for (let coluna = 1; coluna <= Math.min(24, Number(planilha.columnCount || 0)); coluna += 1) {
+        if (normalizar(textoCelula(planilha.getCell(linha, coluna))).includes('SAIDA ENTRADA')) {
+          if (!linhaCabecalho) linhaCabecalho = linha;
+          if (linhaCabecalho === linha) inicios.push(coluna);
+        }
+      }
+      if (inicios.length) break;
+    }
+    if (!inicios.length) {
+      extrairEstruturasNota(planilha, mapa, categoria);
+      return;
+    }
+    const limiteColunas = Number(planilha.columnCount || 0);
+    const blocos = inicios.map((inicio, indice) => {
+      const fim = (inicios[indice + 1] || (limiteColunas + 1)) - 1;
+      let colunaDissipador = 0;
+      let colunaExtensao = 0;
+      for (let coluna = inicio + 1; coluna <= fim; coluna += 1) {
+        const superior = normalizar(textoCelula(planilha.getCell(linhaCabecalho, coluna)));
+        const inferior = normalizar(textoCelula(planilha.getCell(linhaCabecalho + 1, coluna)));
+        if (superior.includes('DISSIPADOR')) colunaDissipador = coluna;
+        if (inferior.includes('EXT')) colunaExtensao = coluna;
+      }
+      return {
+        colunaEntrada: inicio,
+        colunaDescida: inicio + 1,
+        colunaExtensao,
+        colunaDissipador,
+      };
+    });
+    for (let linha = linhaCabecalho + 2; linha <= Number(planilha.rowCount || 0); linha += 1) {
+      for (const bloco of blocos) {
+        adicionarMedicaoNota(mapa, textoCelula(planilha.getCell(linha, bloco.colunaEntrada)), 1, 'un', planilha, linha, categoria);
+        if (bloco.colunaExtensao) {
+          adicionarMedicaoNota(
+            mapa,
+            textoCelula(planilha.getCell(linha, bloco.colunaDescida)),
+            textoCelula(planilha.getCell(linha, bloco.colunaExtensao)),
+            'm',
+            planilha,
+            linha,
+            categoria,
+          );
+        }
+        if (bloco.colunaDissipador) {
+          adicionarMedicaoNota(mapa, textoCelula(planilha.getCell(linha, bloco.colunaDissipador)), 1, 'un', planilha, linha, categoria);
+        }
+      }
+    }
+  }
+
+  function servicoPrevistoNota(valor) {
+    const marcador = normalizar(valor);
+    return ['IMPLANTAR', 'DEMOLIR', 'RELOCAR', 'SUBSTITUIR'].some((acao) => marcador.includes(acao));
+  }
+
+  function extrairBueirosNota(planilha, mapa, categoria) {
+    const greide = normalizar(planilha.name).includes('GREIDE');
+    const colunas = greide
+      ? { corpo: 6, servicoCorpo: 5, extensao: 11, montante: 12, servicoMontante: 13, jusante: 14, servicoJusante: 15 }
+      : { corpo: 5, servicoCorpo: 6, extensao: 10, montante: 11, servicoMontante: 12, jusante: 13, servicoJusante: 14 };
+    for (let linha = 1; linha <= Number(planilha.rowCount || 0); linha += 1) {
+      if (servicoPrevistoNota(textoCelula(planilha.getCell(linha, colunas.servicoCorpo)))) {
+        adicionarMedicaoNota(
+          mapa,
+          textoCelula(planilha.getCell(linha, colunas.corpo)),
+          textoCelula(planilha.getCell(linha, colunas.extensao)),
+          'm',
+          planilha,
+          linha,
+          categoria,
+        );
+      }
+      if (servicoPrevistoNota(textoCelula(planilha.getCell(linha, colunas.servicoMontante)))) {
+        adicionarMedicaoNota(mapa, textoCelula(planilha.getCell(linha, colunas.montante)), 1, 'un', planilha, linha, categoria);
+      }
+      if (servicoPrevistoNota(textoCelula(planilha.getCell(linha, colunas.servicoJusante)))) {
+        adicionarMedicaoNota(mapa, textoCelula(planilha.getCell(linha, colunas.jusante)), 1, 'un', planilha, linha, categoria);
+      }
+    }
+  }
+
   function aplicarConsumosIpr(item) {
     const referencia = buscarConsumoIpr(item.dispositivo);
     const vazio = {
@@ -473,8 +660,10 @@
     for (const planilha of reconhecidas) {
       const nome = normalizar(planilha.name);
       const categoria = categoriaAbaNota(planilha.name);
-      if (nome.includes('REDES')) extrairRedeNota(planilha, mapa, categoria);
-      else if (nome.includes('CAIXAS') || nome.includes('CHAMINE') || nome.includes('ENTRADA')) extrairEstruturasNota(planilha, mapa, categoria);
+      if (nome.includes('BUEIRO')) extrairBueirosNota(planilha, mapa, categoria);
+      else if (nome.includes('REDES')) extrairRedeNota(planilha, mapa, categoria);
+      else if (nome.includes('ENTRADA')) extrairEntradasNota(planilha, mapa, categoria);
+      else if (nome.includes('CAIXA') || nome.includes('CHAMINE')) extrairCaixasNota(planilha, mapa, categoria);
       else extrairLinearesNota(planilha, mapa, categoria);
     }
     const itens = [...mapa.values()].map((item) => aplicarConsumosIpr({ ...item, abasOrigem: [...item.abasOrigem] }));
@@ -632,7 +821,7 @@
       ? melhor && abaResumo.caminho === melhor.aba.caminho ? melhor.xml : await carregarXml(abaResumo)
       : '';
     const resumoPlanilha = abaResumo && xmlResumo
-      ? planilhaDeXml(abaResumo.nome, xmlResumo, stringsCompartilhadas, 500)
+      ? planilhaDeXml(abaResumo.nome, xmlResumo, stringsCompartilhadas)
       : null;
     return { worksheets: planilha ? [planilha] : notasPlanilhas, notasPlanilhas, resumoPlanilha, nomesAbas: abas.map((aba) => aba.nome) };
   }
@@ -673,7 +862,8 @@
   }
 
   function tokensExpandidos(valor) {
-    return normalizar(valor).split(' ').filter(Boolean).flatMap(expandirTokenCompacto);
+    return normalizar(valor).split(' ').filter(Boolean).flatMap(expandirTokenCompacto)
+      .filter((token) => !['X', 'VEZES', 'POR'].includes(token));
   }
 
   function tokenizarPesquisa(valor) {
@@ -687,9 +877,11 @@
   function extrairIdentificadorDispositivo(valor) {
     const tokens = tokensExpandidos(valor);
     for (let indice = 0; indice < tokens.length - 1; indice += 1) {
-      if (!/^[A-Z]{2,6}$/.test(tokens[indice]) || !/^\d{1,5}$/.test(tokens[indice + 1])) continue;
+      if (!/^[A-Z]{2,6}$/.test(tokens[indice])) continue;
       const partes = [tokens[indice]];
       let cursor = indice + 1;
+      if (['D', 'DN', 'DIAMETRO'].includes(tokens[cursor])) cursor += 1;
+      if (!/^\d{1,5}$/.test(tokens[cursor] || '')) continue;
       while (cursor < tokens.length && partes.length < 5) {
         const token = tokens[cursor];
         if (/^\d{1,5}$/.test(token) || (partes.length > 1 && /^[A-C]$/.test(token))) {
@@ -699,9 +891,29 @@
         }
         break;
       }
-      return { sigla: partes[0], partes: partes.slice(1), chave: partes.join('|') };
+      const partesCodigo = partes.slice(1);
+      const partesCanonicas = partesCodigo.map((parte) => (/^\d+$/.test(parte) ? String(Number(parte)) : parte));
+      return {
+        sigla: partes[0],
+        partes: partesCodigo,
+        partesCanonicas,
+        chave: partes.join('|'),
+        chaveCanonica: [partes[0], ...partesCanonicas].join('|'),
+      };
     }
     return null;
+  }
+
+  function chavesIdentificador(identificador) {
+    if (!identificador) return [];
+    return [...new Set([identificador.chave, identificador.chaveCanonica].filter(Boolean))];
+  }
+
+  function chavesCompactasIdentificador(identificador) {
+    if (!identificador) return [];
+    const original = `${identificador.sigla}${identificador.partes.join('')}`;
+    const canonica = `${identificador.sigla}${identificador.partesCanonicas.join('')}`;
+    return [...new Set([original, canonica].filter(Boolean))];
   }
 
   function nomeCorrelacaoDispositivo(valor) {
@@ -735,10 +947,12 @@
       prefixo: new Map(),
       unidade: new Map(),
       identificador: new Map(),
+      compacto: new Map(),
     };
     for (const servico of servicos) {
       adicionarAoIndice(indice.unidade, chaveUnidade(servico.unidade), servico);
-      adicionarAoIndice(indice.identificador, servico.identificadorDispositivo?.chave, servico);
+      for (const chave of chavesIdentificador(servico.identificadorDispositivo)) adicionarAoIndice(indice.identificador, chave, servico);
+      for (const chave of chavesCompactasIdentificador(servico.identificadorDispositivo)) adicionarAoIndice(indice.compacto, chave, servico);
       for (const token of new Set(servico.tokensPesquisa)) {
         adicionarAoIndice(indice.token, token, servico);
         adicionarAoIndice(indice.radical, radicalToken(token), servico);
@@ -746,6 +960,59 @@
       }
     }
     return indice;
+  }
+
+  function candidatosPorIdentificador(valor, unidadeInformada = '') {
+    const encontrados = new Set();
+    const adicionar = (lista) => { for (const servico of lista || []) encontrados.add(servico); };
+    const identificador = extrairIdentificadorDispositivo(valor);
+    for (const chave of chavesIdentificador(identificador)) adicionar(indiceCatalogo.identificador.get(chave));
+
+    const tokens = normalizar(valor).split(' ').filter(Boolean);
+    for (let inicio = 0; inicio < tokens.length; inicio += 1) {
+      if (!/^[A-Z]{2,6}(?:\d.*)?$/.test(tokens[inicio])) continue;
+      let compacta = '';
+      let melhor = null;
+      for (let fim = inicio; fim < Math.min(tokens.length, inicio + 8); fim += 1) {
+        if (['X', 'VEZES', 'POR'].includes(tokens[fim])) continue;
+        compacta += tokens[fim].replace(/(?<=\d)X(?=\d)/g, '');
+        const lista = indiceCatalogo.compacto.get(compacta);
+        if (!lista?.length) continue;
+        const assinaturas = new Set(lista.map((servico) => servico.identificadorDispositivo?.chaveCanonica).filter(Boolean));
+        if (assinaturas.size === 1) melhor = lista;
+      }
+      adicionar(melhor);
+    }
+
+    const unidade = chaveUnidade(unidadeInformada);
+    const candidatos = [...encontrados];
+    return unidade ? candidatos.filter((servico) => chaveUnidade(servico.unidade) === unidade) : candidatos;
+  }
+
+  function candidatosPorPrefixoIdentificador(valor, unidadeInformada = '') {
+    const identificador = extrairIdentificadorDispositivo(valor);
+    if (!identificador?.partesCanonicas.length) return [];
+    const candidatos = catalogo.filter((servico) => {
+      const candidato = servico.identificadorDispositivo;
+      if (!candidato || candidato.sigla !== identificador.sigla) return false;
+      if (candidato.partesCanonicas.length <= identificador.partesCanonicas.length) return false;
+      return identificador.partesCanonicas.every((parte, indice) => candidato.partesCanonicas[indice] === parte);
+    });
+    return filtrarPorUnidade(candidatos, unidadeInformada);
+  }
+
+  function candidatosBocasBueiro(valor, unidadeInformada = '') {
+    const texto = normalizar(valor);
+    const identificador = extrairIdentificadorDispositivo(valor);
+    if (!identificador || !['BSTC', 'BDTC', 'BTTC'].includes(identificador.sigla)) return [];
+    if (!texto.includes('ALA') && !texto.includes('BOCA')) return [];
+    const dimensao = `${identificador.sigla} D ${identificador.partes.join(' ')}`;
+    const candidatos = catalogo.filter((servico) => {
+      const descricao = servico.descricaoNormalizada;
+      return descricao.includes(`ADAPTAVEL EM ${identificador.sigla}`)
+        && descricao.includes(dimensao);
+    });
+    return filtrarPorUnidade(candidatos, unidadeInformada);
   }
 
   function candidatosIndexados(tokens, unidadeInformada = '') {
@@ -761,7 +1028,7 @@
     if (unidade) {
       const compativeis = base.filter((servico) => chaveUnidade(servico.unidade) === unidade);
       if (compativeis.length) base = compativeis;
-      else if (!encontrados.size && indiceCatalogo.unidade.has(unidade)) base = indiceCatalogo.unidade.get(unidade);
+      else base = encontrados.size ? [] : (indiceCatalogo.unidade.get(unidade) || []);
     }
     return base;
   }
@@ -824,6 +1091,27 @@
     return (2 * comuns) / Math.max(1, primeiro.length + segundo.length - 2);
   }
 
+  function pontuarServicoCatalogo(busca, tokens, numerosConsulta, servico) {
+    let correspondencias = 0;
+    let exatas = 0;
+    for (const token of tokens) {
+      const similaridade = similaridadeToken(token, servico);
+      correspondencias += similaridade;
+      if (similaridade === 1) exatas += 1;
+    }
+    const cobertura = correspondencias / tokens.length;
+    const exatidao = exatas / tokens.length;
+    const frase = servico.descricaoNormalizada.includes(busca) ? 1
+      : busca.includes(servico.descricaoNormalizada) ? 0.9 : 0;
+    const caracteres = similaridadeBigramas(busca, servico.descricaoNormalizada);
+    const numerosCorretos = numerosConsulta.every((numeroConsulta) => servico.numerosPesquisa.has(numeroConsulta));
+    const bonusNumeros = numerosConsulta.length ? (numerosCorretos ? 0.1 : -0.45) : 0;
+    const bonusInicio = tokens[0] && similaridadeToken(tokens[0], servico) >= 0.9 ? 0.04 : 0;
+    return Math.max(0, Math.min(1,
+      cobertura * 0.55 + exatidao * 0.13 + caracteres * 0.16 + frase * 0.12 + bonusNumeros + bonusInicio,
+    ));
+  }
+
   function classificarCatalogo(consulta, limite = 80, unidadeInformada = '') {
     const busca = normalizar(consultaComCorrelacao(consulta));
     if (!busca) return catalogo.slice(0, limite).map((servico) => ({ servico, pontuacao: 0 }));
@@ -837,24 +1125,7 @@
 
     for (const servico of catalogoCompativel) {
       if (!tokens.length) continue;
-      let correspondencias = 0;
-      let exatas = 0;
-      for (const token of tokens) {
-        const similaridade = similaridadeToken(token, servico);
-        correspondencias += similaridade;
-        if (similaridade === 1) exatas += 1;
-      }
-      const cobertura = correspondencias / tokens.length;
-      const exatidao = exatas / tokens.length;
-      const frase = servico.descricaoNormalizada.includes(busca) ? 1
-        : busca.includes(servico.descricaoNormalizada) ? 0.9 : 0;
-      const caracteres = similaridadeBigramas(busca, servico.descricaoNormalizada);
-      const numerosCorretos = numerosConsulta.every((numeroConsulta) => servico.numerosPesquisa.has(numeroConsulta));
-      const bonusNumeros = numerosConsulta.length ? (numerosCorretos ? 0.1 : -0.45) : 0;
-      const bonusInicio = tokens[0] && similaridadeToken(tokens[0], servico) >= 0.9 ? 0.04 : 0;
-      const pontuacao = Math.max(0, Math.min(1,
-        cobertura * 0.55 + exatidao * 0.13 + caracteres * 0.16 + frase * 0.12 + bonusNumeros + bonusInicio,
-      ));
+      const pontuacao = pontuarServicoCatalogo(busca, tokens, numerosConsulta, servico);
 
       if (pontuacao >= 0.12) resultados.push({ servico, pontuacao });
     }
@@ -891,8 +1162,7 @@
   function filtrarPorUnidade(servicos, unidadeInformada) {
     const chave = chaveUnidade(unidadeInformada);
     if (!chave) return servicos;
-    const compativeis = servicos.filter((servico) => chaveUnidade(servico.unidade) === chave);
-    return compativeis.length ? compativeis : servicos;
+    return servicos.filter((servico) => chaveUnidade(servico.unidade) === chave);
   }
 
   function unidadeDoItem(item) {
@@ -905,7 +1175,18 @@
 
   function pertenceAoMesmoDispositivo(servico, assinatura) {
     if (!assinatura) return false;
-    return servico.identificadorDispositivo?.chave === assinatura.chave;
+    return servico.identificadorDispositivo?.chaveCanonica === assinatura.chaveCanonica;
+  }
+
+  function classificarFamiliaIdentificada(consulta, familia) {
+    const busca = normalizar(consultaComCorrelacao(consulta));
+    const tokens = tokenizarPesquisa(busca);
+    const numerosConsulta = tokens.filter((token) => /^\d+$/.test(token));
+    return familia.map((servico) => ({
+      servico,
+      pontuacao: tokens.length ? pontuarServicoCatalogo(busca, tokens, numerosConsulta, servico) : 0,
+    })).sort((a, b) => b.pontuacao - a.pontuacao
+      || a.servico.descricao.localeCompare(b.servico.descricao, 'pt-BR'));
   }
 
   function montarAlternativas(consulta, unidadeInformada, selecionado = null, limite = 50) {
@@ -953,20 +1234,23 @@
       };
     }
 
-    const identificador = extrairIdentificadorDispositivo(dispositivo);
-    const familiaIdentificada = identificador
-      ? filtrarPorUnidade(indiceCatalogo.identificador.get(identificador.chave) || [], unidadeInformada)
-      : [];
-    if (familiaIdentificada.length) {
-      const selecionado = familiaIdentificada[0];
-      const opcoesPontuadas = montarAlternativas(dispositivo, unidadeInformada, selecionado);
-      const nomeTecnico = CORRELACOES_DISPOSITIVOS.get(identificador.sigla) || '';
+    const chaveDispositivo = normalizar(dispositivo).replace(/\s/g, '');
+    if (CODIGOS_EXCLUIDOS_IPR.has(chaveDispositivo)) {
       return {
-        selecionado,
-        candidatos: opcoesPontuadas.map((resultado) => resultado.servico),
-        opcoesPontuadas,
-        metodo: nomeTecnico ? `Correla\u00e7\u00e3o SICRO: ${nomeTecnico}` : 'Dispositivo SICRO exato',
-        confianca: 1,
+        selecionado: null,
+        candidatos: [],
+        opcoesPontuadas: [],
+        metodo: 'C\u00f3digo exclu\u00eddo da Publica\u00e7\u00e3o IPR 736 \u2014 definir solu\u00e7\u00e3o substituta no projeto',
+        confianca: 0,
+      };
+    }
+    const equivalenteLegado = CODIGOS_LEGADOS_IPR.get(chaveDispositivo);
+    if (equivalenteLegado) {
+      const resolucaoAtualizada = resolverEntrada(equivalenteLegado, '', unidadeInformada);
+      return {
+        ...resolucaoAtualizada,
+        metodo: `C\u00f3digo IPR legado ${String(dispositivo).trim()} \u2192 ${equivalenteLegado} \u2014 ${resolucaoAtualizada.metodo}`,
+        confianca: Math.min(0.72, Number(resolucaoAtualizada.confianca || 0)),
       };
     }
 
@@ -980,21 +1264,84 @@
       return { selecionado: exatos[0], candidatos: opcoesPontuadas.map((resultado) => resultado.servico), opcoesPontuadas, metodo: 'Descri\u00e7\u00e3o exata', confianca: 1 };
     }
 
+    const familiaExataSemFiltro = candidatosPorIdentificador(dispositivo);
+    const familiaExata = candidatosPorIdentificador(dispositivo, unidadeInformada);
+    const familiaPrefixo = candidatosPorPrefixoIdentificador(dispositivo, unidadeInformada);
+    const familiaBueiro = candidatosBocasBueiro(dispositivo, unidadeInformada);
+    const familiaIdentificada = familiaExata.length ? familiaExata : familiaPrefixo.length ? familiaPrefixo : familiaBueiro;
+    const familiaSemFiltro = familiaIdentificada.length
+      ? familiaIdentificada
+      : familiaExataSemFiltro.length ? familiaExataSemFiltro : candidatosPorPrefixoIdentificador(dispositivo);
+    if (familiaSemFiltro.length && !familiaIdentificada.length && chaveUnidade(unidadeInformada)) {
+      const opcoesPontuadas = classificarFamiliaIdentificada(dispositivo, familiaSemFiltro);
+      return {
+        selecionado: null,
+        candidatos: opcoesPontuadas.map((resultado) => resultado.servico),
+        opcoesPontuadas,
+        metodo: `Unidade incompat\u00edvel: esperado ${[...new Set(familiaSemFiltro.map((servico) => servico.unidade))].join('/')}`,
+        confianca: 0,
+      };
+    }
+    if (familiaIdentificada.length) {
+      const classificadosFamilia = classificarFamiliaIdentificada(dispositivo, familiaIdentificada);
+      const melhorFamilia = classificadosFamilia[0];
+      const segundoFamilia = classificadosFamilia[1];
+      const selecionado = melhorFamilia.servico;
+      const margem = Math.max(0, melhorFamilia.pontuacao - Number(segundoFamilia?.pontuacao || 0));
+      const varianteDiscriminada = familiaIdentificada.length === 1 || (melhorFamilia.pontuacao >= 0.46 && margem >= 0.025);
+      const confianca = familiaIdentificada.length === 1
+        ? 1
+        : varianteDiscriminada
+          ? Math.min(0.98, 0.78 + Math.min(0.2, margem) + Math.max(0, melhorFamilia.pontuacao - 0.55) * 0.12)
+          : 0.68;
+      const opcoesPontuadas = montarAlternativas(dispositivo, unidadeInformada, selecionado);
+      const nomeTecnico = CORRELACOES_DISPOSITIVOS.get(selecionado.identificadorDispositivo?.sigla) || '';
+      return {
+        selecionado,
+        candidatos: opcoesPontuadas.map((resultado) => resultado.servico),
+        opcoesPontuadas,
+        metodo: varianteDiscriminada
+          ? nomeTecnico ? `Correla\u00e7\u00e3o SICRO: ${nomeTecnico}` : 'Dispositivo SICRO exato'
+          : 'Fam\u00edlia SICRO exata \u2014 revisar material e execu\u00e7\u00e3o',
+        confianca,
+      };
+    }
+
     const classificados = classificarCatalogo(dispositivo, 80, unidadeInformada);
     const melhor = classificados[0];
     const segundo = classificados[1];
     const margem = melhor ? Math.max(0, melhor.pontuacao - Number(segundo?.pontuacao || 0)) : 0;
+    const tokensEntrada = tokenizarPesquisa(dispositivo);
+    const possuiDimensao = tokensEntrada.some((token) => /^\d+$/.test(token));
+    const margemMinima = possuiDimensao ? 0.025 : 0.045;
+    const palavrasEntrada = tokensEntrada.filter((token) => !/^\d+$/.test(token));
+    const mesmaFamiliaNoTopo = Boolean(melhor?.servico.identificadorDispositivo?.chaveCanonica
+      && melhor.servico.identificadorDispositivo.chaveCanonica === segundo?.servico.identificadorDispositivo?.chaveCanonica);
+    const familiaDescritivaClara = Boolean(mesmaFamiliaNoTopo
+      && palavrasEntrada.length >= 2
+      && melhor.pontuacao >= 0.65);
+    const identificadorEntrada = extrairIdentificadorDispositivo(dispositivo);
+    const codigoConciso = Boolean(identificadorEntrada && tokensExpandidos(dispositivo).length <= 3);
+    const siglaCompativel = !codigoConciso || melhor?.servico.identificadorDispositivo?.sigla === identificadorEntrada.sigla;
     const confiancaCalibrada = melhor
       ? Math.max(0, Math.min(1, melhor.pontuacao * 0.9 + Math.min(margem, 0.2) * 0.5))
       : 0;
-    const selecionarAutomaticamente = Boolean(melhor && (melhor.pontuacao >= 0.42 || (melhor.pontuacao >= 0.3 && margem >= 0.06)));
+    const selecionarAutomaticamente = Boolean(melhor
+      && siglaCompativel
+      && tokensEntrada.length >= 2
+      && melhor.pontuacao >= 0.55
+      && (margem >= margemMinima || familiaDescritivaClara));
     const opcoesPontuadas = montarAlternativas(dispositivo, unidadeInformada, melhor?.servico || null);
     return {
       selecionado: selecionarAutomaticamente ? melhor.servico : null,
       candidatos: opcoesPontuadas.map((resultado) => resultado.servico),
       opcoesPontuadas,
-      metodo: selecionarAutomaticamente ? 'Correspond\u00eancia autom\u00e1tica' : melhor ? 'Sugest\u00f5es para revis\u00e3o' : 'N\u00e3o encontrado',
-      confianca: confiancaCalibrada,
+      metodo: selecionarAutomaticamente
+        ? familiaDescritivaClara && margem < margemMinima
+          ? 'Fam\u00edlia SICRO prov\u00e1vel \u2014 revisar material e execu\u00e7\u00e3o'
+          : 'Correspond\u00eancia autom\u00e1tica'
+        : melhor ? 'Sugest\u00f5es para revis\u00e3o' : 'N\u00e3o encontrado',
+      confianca: familiaDescritivaClara && margem < margemMinima ? Math.min(0.68, confiancaCalibrada) : confiancaCalibrada,
     };
   }
 
@@ -1172,6 +1519,7 @@
           });
           item.resumoCategoria = registro.categoria;
           item.abasOrigem = registro.abasOrigem;
+          item.quantidadesPorCategoria = registro.quantidadesPorCategoria;
           itens.push(item);
         }
       } else {
@@ -1447,7 +1795,7 @@
 
   function statusChecklistItem(item) {
     if (!item.selecionado) return { chave: 'missing', rotulo: 'N\u00e3o encontrado' };
-    const precisaRevisao = item.metodoResolucao === 'Correspond\u00eancia autom\u00e1tica' && Number(item.confianca || 0) < 0.72;
+    const precisaRevisao = Number(item.confianca || 0) < 0.72 || normalizar(item.metodoResolucao).includes('REVISAR');
     if (precisaRevisao) return { chave: 'review', rotulo: 'Revisar sugest\u00e3o' };
     return { chave: 'found', rotulo: 'Encontrado' };
   }
@@ -1787,8 +2135,19 @@
     const acos = linhasResumo.filter((item) => item.aco != null)
       .map((item) => ({ rotulo: item.dispositivo, valor: Number(item.aco || 0) })).sort((a, b) => b.valor - a.valor);
     const custosPorCategoria = [...estado.itens.reduce((mapa, item) => {
-      const chave = item.resumoCategoria || categoriaDispositivoFallback(item.dispositivo);
-      mapa.set(chave, (mapa.get(chave) || 0) + valorTotal(item));
+      const distribuicao = item.quantidadesPorCategoria instanceof Map
+        ? [...item.quantidadesPorCategoria.entries()].filter(([, quantidade]) => Number(quantidade) > 0)
+        : [];
+      const quantidadeDistribuida = distribuicao.reduce((soma, [, quantidade]) => soma + Number(quantidade), 0);
+      if (distribuicao.length && quantidadeDistribuida > 0) {
+        for (const [categoria, quantidade] of distribuicao) {
+          const parcela = valorTotal(item) * Number(quantidade) / quantidadeDistribuida;
+          mapa.set(categoria, (mapa.get(categoria) || 0) + parcela);
+        }
+      } else {
+        const chave = item.resumoCategoria || categoriaDispositivoFallback(item.dispositivo);
+        mapa.set(chave, (mapa.get(chave) || 0) + valorTotal(item));
+      }
       return mapa;
     }, new Map()).entries()].map(([rotulo, valor]) => ({ rotulo, valor })).sort((a, b) => b.valor - a.valor);
     const extensaoTotal = resumoPlanilha

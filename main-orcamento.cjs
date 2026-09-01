@@ -3,7 +3,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 
 const APP_TITLE = 'HID X — Orçamento e Dashboard';
-const APP_VERSION = '1.1.3';
+const APP_VERSION = '1.1.4';
 const APP_FILE = 'index.html';
 const EM_TESTE = process.env.HIDX_SMOKE_TEST === '1';
 const ARQUIVO_TESTE = process.env.HIDX_SMOKE_RESULT || '';
