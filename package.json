@@ -1,6 +1,6 @@
 {
   "name": "hid-x-orcamento",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "description": "Orçamento SICRO e Dashboard de drenagem com leitura automática de Notas de Serviço e consumos IPR 736.",
   "author": "Daniel Machado",
   "main": "main-orcamento.cjs",

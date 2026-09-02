@@ -40,6 +40,19 @@ function quaseIgual(atual, esperado, tolerancia = 1e-9) {
 function testar(script) {
   const api = carregarAplicacao(script);
 
+  const progressoInicial = api.normalizarAtualizacaoProgresso(null, 0, 'Preparando', 'processando', true);
+  assert.deepEqual({ ...progressoInicial }, { percentual: 0, etapa: 'Preparando', situacao: 'processando' });
+  const progressoIntermediario = api.normalizarAtualizacaoProgresso(progressoInicial, 52.6, 'Matching SICRO');
+  assert.deepEqual({ ...progressoIntermediario }, { percentual: 53, etapa: 'Matching SICRO', situacao: 'processando' });
+  const progressoMonotono = api.normalizarAtualizacaoProgresso(progressoIntermediario, 40, 'Etapa atrasada');
+  assert.equal(progressoMonotono.percentual, 53, 'progresso não pode retroceder durante uma importação');
+  const progressoConcluido = api.normalizarAtualizacaoProgresso(progressoMonotono, 92, 'Concluído', 'concluido');
+  assert.deepEqual({ ...progressoConcluido }, { percentual: 100, etapa: 'Concluído', situacao: 'concluido' });
+  const progressoReiniciado = api.normalizarAtualizacaoProgresso(progressoConcluido, 0, 'Novo arquivo', 'processando', true);
+  assert.equal(progressoReiniciado.percentual, 0, 'nova importação deve reiniciar em zero');
+  const progressoErro = api.normalizarAtualizacaoProgresso(progressoIntermediario, 10, 'Erro de leitura', 'erro');
+  assert.deepEqual({ ...progressoErro }, { percentual: 53, etapa: 'Erro de leitura', situacao: 'erro' });
+
   const compactos = [
     ['MFC3', 'm', /MFC 03/],
     ['BLS2', 'un', /BLS 02/],

@@ -118,12 +118,25 @@ h1,h2,h3{margin:0;text-wrap:balance;font-family:var(--display);font-weight:600}
 .orc-card-head p{margin:4px 0 0;color:var(--muted);font-size:12px}
 .orc-card-body{padding:17px 18px}
 .orc-stack{display:flex;flex-direction:column;gap:13px}
-.orc-upload{display:flex;min-height:142px;align-items:center;justify-content:center;text-align:center;padding:20px;border:1.5px dashed #8abcf0;border-radius:12px;background:linear-gradient(145deg,#f5faff,#edf6ff);cursor:pointer;transition:.2s ease}
-.orc-upload:hover,.orc-upload.is-drag{border-color:#1677ff;background:#e8f3ff;transform:translateY(-1px)}
+.orc-upload{position:relative;display:flex;min-height:142px;align-items:center;justify-content:center;text-align:center;padding:20px;border:1.5px dashed #8abcf0;border-radius:12px;background:linear-gradient(145deg,#f5faff,#edf6ff);cursor:pointer;overflow:hidden;transition:border-color .2s ease,background-color .2s ease,box-shadow .2s ease,transform .2s ease}
+.orc-upload::before{content:"";position:absolute;inset:-70% auto -70% -34%;width:28%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.72),transparent);transform:translateX(-170%) rotate(14deg);transition:transform .6s ease}
+.orc-upload:hover,.orc-upload.is-drag{border-color:#1677ff;background:#e8f3ff;box-shadow:0 12px 28px rgba(22,119,255,.11);transform:translateY(-2px)}
+.orc-upload:hover::before,.orc-upload.is-drag::before{transform:translateX(610%) rotate(14deg)}
+.orc-upload.is-loading{pointer-events:none;border-style:solid;border-color:#9dc8f5;background:#f4f9ff;box-shadow:inset 0 0 0 1px rgba(22,119,255,.05)}
 .orc-upload input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
 .orc-upload strong{display:block;color:#0e5fb8;font-size:14px}
 .orc-upload small{display:block;color:var(--muted);margin-top:5px;font-size:11px}
-.orc-upload-icon{display:grid;place-items:center;width:42px;height:42px;margin:0 auto 10px;border-radius:12px;background:#fff;color:#1677ff;font-size:23px;box-shadow:0 6px 16px rgba(22,119,255,.14)}
+.orc-upload-icon{display:grid;place-items:center;width:42px;height:42px;margin:0 auto 10px;border-radius:12px;background:#fff;color:#1677ff;font-size:23px;box-shadow:0 6px 16px rgba(22,119,255,.14);transition:transform .2s ease,box-shadow .2s ease}
+.orc-upload:hover .orc-upload-icon,.orc-upload.is-drag .orc-upload-icon{box-shadow:0 10px 22px rgba(22,119,255,.19);transform:translateY(-3px) scale(1.04)}
+.orc-import-progress{position:relative;margin-top:12px;padding:13px 14px 14px;border:1px solid #cfe1f4;border-radius:11px;background:linear-gradient(145deg,#fff,#f2f8ff);box-shadow:0 10px 24px rgba(30,91,150,.08);overflow:hidden}
+.orc-import-progress-head{display:flex;align-items:center;gap:9px;margin-bottom:9px;color:#315374}
+.orc-import-progress-pulse{flex:0 0 auto;width:8px;height:8px;border-radius:50%;background:var(--agua);box-shadow:0 0 0 0 rgba(22,119,255,.30);animation:orcProgressPulse 1.6s ease-out infinite}
+.orc-import-progress-stage{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:800}
+.orc-import-progress-percent{margin-left:auto;color:var(--agua-ink);font-family:var(--num);font-size:14px;font-weight:900;font-variant-numeric:tabular-nums}
+.orc-import-progress-track{height:9px;border:1px solid #d7e7f6;border-radius:999px;background:#eaf2fa;box-shadow:inset 0 1px 2px rgba(16,35,63,.07);overflow:hidden}
+.orc-import-progress-bar{position:relative;display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--agua),#42a5ff);box-shadow:0 0 14px rgba(22,119,255,.28);transition:width .32s cubic-bezier(.22,1,.36,1)}
+.orc-import-progress-bar::after{content:"";position:absolute;inset:0;background:linear-gradient(105deg,transparent 18%,rgba(255,255,255,.48) 46%,transparent 72%);transform:translateX(-100%);animation:orcProgressShimmer 1.35s linear infinite}
+.orc-import-progress-hint{display:block;margin-top:7px;color:var(--muted);font-size:9.5px;line-height:1.35}
 .orc-fields{display:grid;grid-template-columns:1fr 1fr;gap:11px}
 .orc-field.full{grid-column:1/-1}
 .orc-field label{display:block;margin-bottom:4px;color:#60758e;font-size:11px;font-weight:700}
@@ -333,6 +346,78 @@ h1,h2,h3{margin:0;text-wrap:balance;font-family:var(--display);font-weight:600}
 .orc-price b{display:block;font-size:12px}
 .orc-price span{font-size:10px;color:var(--muted)}
 
+/* ---------- movimento, acabamento e estados de interação ---------- */
+html{scroll-behavior:smooth}
+body{overflow-x:hidden}
+.topo,.indice{backdrop-filter:saturate(140%) blur(12px)}
+.logo-topo{transition:transform .24s ease,box-shadow .24s ease}
+.logo-topo:hover{transform:rotate(-2deg) scale(1.04)}
+.disciplina-toggle{transition:color .2s ease,background-color .2s ease,transform .2s ease}
+.disciplina-toggle:active{transform:translateY(1px)}
+
+.orc-app:not([hidden]) .orc-hero > :first-child,.dash-app:not([hidden]) .dash-function-head > :first-child{animation:orcEnterUp .44s cubic-bezier(.22,1,.36,1) both}
+.orc-app:not([hidden]) .orc-hero-insight,.dash-app:not([hidden]) .dash-function-actions{animation:orcEnterUp .48s .06s cubic-bezier(.22,1,.36,1) both}
+.orc-app:not([hidden]) .orc-step{animation:orcEnterUp .38s cubic-bezier(.22,1,.36,1) both}
+.orc-app:not([hidden]) .orc-step:nth-child(2){animation-delay:.05s}.orc-app:not([hidden]) .orc-step:nth-child(3){animation-delay:.1s}
+.orc-app:not([hidden]) .orc-grid > .orc-card,.dash-app:not([hidden]) > .dash-drop,.dash-app:not([hidden]) > .orc-dashboard{animation:orcEnterUp .46s .08s cubic-bezier(.22,1,.36,1) both}
+.orc-app:not([hidden]) .orc-grid > .orc-card:nth-child(2),.dash-app:not([hidden]) > .orc-dashboard{animation-delay:.14s}
+
+.orc-step{position:relative;overflow:hidden;transition:border-color .22s ease,background-color .22s ease,color .22s ease,box-shadow .22s ease,transform .22s ease}
+.orc-step::after{content:"";position:absolute;inset:auto 0 0;height:2px;background:linear-gradient(90deg,var(--agua),#42a5ff);transform:scaleX(0);transform-origin:left;transition:transform .28s ease}
+.orc-step span{transition:background-color .22s ease,color .22s ease,transform .22s ease}
+.orc-step[data-state="active"]{transform:translateY(-1px)}
+.orc-step[data-state="active"]::after,.orc-step[data-state="done"]::after{transform:scaleX(1)}
+.orc-step[data-state="active"] span{transform:scale(1.06)}
+
+.orc-btn,.orc-pareto-action,.orc-tab,.orc-choice,.orc-dialog-head button{transition:color .18s ease,background-color .18s ease,border-color .18s ease,box-shadow .18s ease,transform .18s ease}
+.orc-btn:active:not(:disabled),.orc-pareto-action:active:not(:disabled),.orc-choice:active,.orc-dialog-head button:active{transform:translateY(1px) scale(.985)}
+.orc-btn.secondary:hover:not(:disabled),.orc-choice:hover{border-color:#75ace4;background:#f4f9ff;box-shadow:0 7px 16px rgba(22,119,255,.08)}
+.orc-btn.ghost:hover:not(:disabled){background:var(--agua-soft);color:var(--agua-ink)}
+.orc-btn.danger:hover:not(:disabled){background:#fff0f1;border-color:#f3aeb3}
+.orc-pareto-action:hover:not(:disabled){background:#dcecff;box-shadow:0 6px 14px rgba(22,119,255,.12);transform:translateY(-1px)}
+.orc-dialog-head button:hover{background:#e3eef8;color:#24496d;transform:rotate(3deg)}
+
+.orc-tab{position:relative;min-height:34px}
+.orc-tab::after{content:"";position:absolute;right:9px;bottom:2px;left:9px;height:2px;border-radius:999px;background:var(--agua);transform:scaleX(0);transition:transform .2s ease}
+.orc-tab:hover{background:#f2f7fc;color:#315b82}
+.orc-tab[aria-selected="true"]::after{transform:scaleX(1)}
+
+.orc-field input,.orc-search input,.orc-table input{transition:border-color .18s ease,background-color .18s ease,box-shadow .18s ease}
+.orc-field input:hover,.orc-search input:hover,.orc-table input:hover{border-color:#9fc3e5;background:#fff}
+.orc-upload:focus-within,.dash-drop:focus-within{outline:3px solid rgba(22,119,255,.18);outline-offset:3px;border-color:var(--agua)}
+:where(button,input,[tabindex]):focus-visible{outline:3px solid rgba(22,119,255,.22);outline-offset:2px}
+
+.orc-import-progress:not([hidden]){animation:orcProgressEnter .3s cubic-bezier(.22,1,.36,1) both}
+.dash-import-progress{margin:0 0 12px}
+.orc-status.show{animation:orcStatusEnter .26s ease both}
+.orc-metric strong{transition:color .2s ease,transform .2s ease}
+.orc-metric:hover strong{color:var(--agua-ink);transform:translateY(-1px)}
+.orc-check-row{transition:border-color .18s ease,box-shadow .18s ease,transform .18s ease}
+.orc-check-row:hover{border-color:#b7d2eb;box-shadow:0 6px 16px rgba(35,83,132,.06);transform:translateX(2px)}
+
+.orc-modal:not([hidden]){animation:orcFadeIn .2s ease both}
+.orc-modal:not([hidden]) .orc-dialog{animation:orcDialogEnter .28s cubic-bezier(.22,1,.36,1) both}
+.orc-option:focus-visible{border-color:var(--agua);box-shadow:0 0 0 3px rgba(22,119,255,.14)}
+.orc-table tbody tr,.orc-dash-table tbody tr{transition:background-color .16s ease}
+.orc-dash-bar-fill,.orc-dash-compare-line i,.orc-dash-abc-cost-track i{transform-origin:left;animation:orcBarGrow .54s cubic-bezier(.22,1,.36,1) both}
+.orc-dash-kpi::after{transition:transform .28s ease,background-color .28s ease}
+
+@media(hover:hover){
+  .orc-card,.orc-pareto,.dash-function-head,.dash-app > .orc-dashboard,.orc-dash-panel,.orc-dash-kpi{transition:border-color .22s ease,box-shadow .22s ease,transform .22s ease}
+  .orc-card:hover,.orc-pareto:hover,.dash-function-head:hover{border-color:#c3d9ed;box-shadow:0 18px 42px rgba(35,83,132,.10);transform:translateY(-2px)}
+  .orc-dash-panel:hover,.orc-dash-kpi:hover{border-color:#bfd7ec;box-shadow:0 13px 30px rgba(35,83,132,.08);transform:translateY(-2px)}
+  .orc-dash-kpi:hover::after{transform:scale(1.16)}
+}
+
+@keyframes orcEnterUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes orcFadeIn{from{opacity:0}to{opacity:1}}
+@keyframes orcDialogEnter{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes orcStatusEnter{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+@keyframes orcProgressEnter{from{opacity:0;transform:translateY(-7px) scale(.99)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes orcProgressPulse{0%{box-shadow:0 0 0 0 rgba(22,119,255,.30)}65%,100%{box-shadow:0 0 0 7px rgba(22,119,255,0)}}
+@keyframes orcProgressShimmer{to{transform:translateX(100%)}}
+@keyframes orcBarGrow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+
 @media(max-width:1180px){.orc-hero{grid-template-columns:1fr}.orc-hero-insight{width:100%}}
 @media(max-width:900px){.dash-function-head{display:block}.dash-function-actions{justify-content:flex-start;margin-top:14px}}
 @media(max-width:600px){.dash-drop{grid-template-columns:auto 1fr}.dash-drop-tag{grid-column:2;justify-self:start}.dash-drop-icon{grid-row:1/3}}
@@ -343,6 +428,11 @@ h1,h2,h3{margin:0;text-wrap:balance;font-family:var(--display);font-weight:600}
 @media(max-width:820px){.orc-ref-matrix-head{align-items:flex-start;flex-direction:column}.orc-ref-matrix-head > span{white-space:normal}}
 @media(max-width:720px){.orc-hero{grid-template-columns:1fr}.orc-base{align-self:flex-start;white-space:normal}.orc-pareto-chart{height:238px;padding-inline:2px}.orc-pareto-legend{align-items:flex-start}.orc-steps{grid-template-columns:1fr}.orc-grid{display:block}.orc-card{margin-bottom:14px}.orc-card:first-child .orc-card-body{display:block}.orc-stack{margin-top:14px}.orc-summary{grid-template-columns:1fr 1fr}.orc-check-summary{grid-template-columns:1fr 1fr}.orc-check-row{grid-template-columns:22px minmax(0,1fr) auto}.orc-check-row .orc-choice{grid-column:2/-1;justify-self:start}.orc-option{grid-template-columns:90px 1fr}.orc-price{grid-column:2;text-align:left}.orc-dashboard{padding:13px}.orc-dash-head{display:block}.orc-dash-source{max-width:100%;margin-top:10px}.orc-dash-abc{grid-template-columns:1fr;justify-items:center}.orc-dash-legend{width:100%}.orc-ref-kpi strong{font-size:18px}.orc-ref-legend-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:480px){.orc-dash-kpis{grid-template-columns:1fr}.orc-dash-bar-row{grid-template-columns:1fr auto}.orc-dash-bar-track{grid-column:1/-1;grid-row:2}.orc-dash-compare-row{grid-template-columns:1fr}.orc-dash-abc-cost-row{grid-template-columns:22px 1fr auto}.orc-dash-abc-cost-track{grid-column:2/-1;grid-row:2}.orc-dash-abc-cost-row > strong{grid-column:3;grid-row:1}.orc-dash-section-head{align-items:flex-start}}
+@media(max-width:480px){.orc-import-progress{padding:12px}.orc-import-progress-stage{font-size:10px}.orc-import-progress-percent{font-size:13px}.orc-import-progress-hint{display:none}.orc-footer-actions{align-items:flex-start;flex-direction:column}.orc-footer-actions .orc-actions{width:100%}.orc-footer-actions .orc-btn{flex:1}}
+@media(prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-delay:0ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
 </style>
 </head>
 <body>
@@ -394,13 +484,23 @@ h1,h2,h3{margin:0;text-wrap:balance;font-family:var(--display);font-weight:600}
         </div>
         <div class="orc-card-body">
           <label class="orc-upload" id="orcDrop">
-            <input type="file" id="orcArquivo" accept=".xlsx">
+            <input type="file" id="orcArquivo" accept=".xlsx" aria-describedby="orcUploadHint">
             <span>
               <span class="orc-upload-icon" aria-hidden="true">⇧</span>
               <strong>Selecionar Excel de dispositivos</strong>
-              <small>arquivo .xlsx — ou arraste para esta área</small>
+              <small id="orcUploadHint">arquivo .xlsx — ou arraste para esta área</small>
             </span>
           </label>
+
+          <section class="orc-import-progress" id="orcImportProgress" role="progressbar" aria-label="Progresso da importação" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden>
+            <div class="orc-import-progress-head">
+              <span class="orc-import-progress-pulse" aria-hidden="true"></span>
+              <strong class="orc-import-progress-stage" id="orcImportProgressStage" aria-live="polite">Preparando a planilha…</strong>
+              <output class="orc-import-progress-percent" id="orcImportProgressPercent">0%</output>
+            </div>
+            <div class="orc-import-progress-track" aria-hidden="true"><span class="orc-import-progress-bar" id="orcImportProgressBar" style="width:0%"></span></div>
+            <small class="orc-import-progress-hint">Você pode acompanhar cada etapa enquanto o HID X processa os dados.</small>
+          </section>
 
           <div class="orc-stack">
             <div class="orc-fields">
@@ -464,11 +564,20 @@ h1,h2,h3{margin:0;text-wrap:balance;font-family:var(--display);font-weight:600}
       </div>
     </header>
     <label class="dash-drop" id="dashboardDrop">
-      <input type="file" id="dashboardArquivo" accept=".xlsx">
+      <input type="file" id="dashboardArquivo" accept=".xlsx" aria-describedby="dashboardUploadHint">
       <span class="dash-drop-icon" aria-hidden="true">⇧</span>
-      <span class="dash-drop-copy"><strong>Arraste a planilha aqui para montar Orçamento e Dashboard</strong><span>O HID X lê diretamente as Notas de Serviço; a aba RESUMO não é obrigatória.</span></span>
+      <span class="dash-drop-copy"><strong>Arraste a planilha aqui para montar Orçamento e Dashboard</strong><span id="dashboardUploadHint">O HID X lê diretamente as Notas de Serviço; a aba RESUMO não é obrigatória.</span></span>
       <span class="dash-drop-tag">Excel .xlsx</span>
     </label>
+    <section class="orc-import-progress dash-import-progress" id="dashboardImportProgress" role="progressbar" aria-label="Progresso da importação do dashboard" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden>
+      <div class="orc-import-progress-head">
+        <span class="orc-import-progress-pulse" aria-hidden="true"></span>
+        <strong class="orc-import-progress-stage" id="dashboardImportProgressStage" aria-live="polite">Preparando a planilha…</strong>
+        <output class="orc-import-progress-percent" id="dashboardImportProgressPercent">0%</output>
+      </div>
+      <div class="orc-import-progress-track" aria-hidden="true"><span class="orc-import-progress-bar" id="dashboardImportProgressBar" style="width:0%"></span></div>
+      <small class="orc-import-progress-hint">Os indicadores aparecem assim que a leitura chegar a 100%.</small>
+    </section>
     <div class="orc-status dash-function-status" id="dashboardStatus" role="status" aria-live="polite"></div>
     <section class="orc-dashboard" id="orcDashboard" aria-label="Dashboard executivo do orçamento"></section>
   </main>

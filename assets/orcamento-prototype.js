@@ -95,6 +95,8 @@
     arquivoOrigem: '',
     deteccao: null,
     checklistAberto: false,
+    importando: false,
+    progressoImportacao: { percentual: 0, etapa: '', situacao: 'oculto' },
   };
 
   const moeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -108,6 +110,61 @@
       .toUpperCase()
       .replace(/[^A-Z0-9]+/g, ' ')
       .trim();
+  }
+
+  function normalizarAtualizacaoProgresso(atual, percentual, etapa, situacao = 'processando', reiniciar = false) {
+    const anterior = Number(atual?.percentual || 0);
+    const solicitado = Math.max(0, Math.min(100, Math.round(Number(percentual) || 0)));
+    const valor = situacao === 'concluido' ? 100 : reiniciar ? solicitado : Math.max(anterior, solicitado);
+    return {
+      percentual: valor,
+      etapa: String(etapa || atual?.etapa || ''),
+      situacao,
+    };
+  }
+
+  function atualizarProgressoImportacao(percentual, etapa, situacao = 'processando', reiniciar = false) {
+    estado.progressoImportacao = normalizarAtualizacaoProgresso(
+      estado.progressoImportacao,
+      percentual,
+      etapa,
+      situacao,
+      reiniciar,
+    );
+    const progresso = estado.progressoImportacao;
+    for (const prefixo of ['orc', 'dashboard']) {
+      const container = document.getElementById(`${prefixo}ImportProgress`);
+      const barra = document.getElementById(`${prefixo}ImportProgressBar`);
+      const rotulo = document.getElementById(`${prefixo}ImportProgressStage`);
+      const porcentagem = document.getElementById(`${prefixo}ImportProgressPercent`);
+      if (container) {
+        container.hidden = false;
+        container.dataset.status = progresso.situacao;
+        container.setAttribute('aria-valuenow', String(progresso.percentual));
+        container.setAttribute('aria-valuetext', `${progresso.percentual}% \u2014 ${progresso.etapa}`);
+        container.setAttribute('aria-busy', String(progresso.situacao === 'processando'));
+      }
+      if (barra) barra.style.width = `${progresso.percentual}%`;
+      if (rotulo) rotulo.textContent = progresso.etapa;
+      if (porcentagem) porcentagem.textContent = `${progresso.percentual}%`;
+    }
+    const processando = progresso.situacao === 'processando';
+    for (const id of ['orcDrop', 'dashboardDrop']) {
+      const area = document.getElementById(id);
+      if (area) {
+        area.classList.toggle('is-loading', processando);
+        area.setAttribute('aria-disabled', String(processando));
+      }
+    }
+    for (const id of ['orcArquivo', 'dashboardArquivo']) {
+      const entrada = document.getElementById(id);
+      if (entrada) entrada.disabled = processando;
+    }
+    return progresso;
+  }
+
+  function cederInterface() {
+    return new Promise((resolver) => window.setTimeout(resolver, 0));
   }
 
   const indiceConsumosIpr = (() => {
@@ -1500,31 +1557,43 @@
 
   async function importarArquivo(arquivo, opcoes = {}) {
     if (!arquivo) return;
+    if (estado.importando) {
+      definirStatus('Aguarde a importa\u00e7\u00e3o atual terminar antes de selecionar outra planilha.');
+      return;
+    }
     if (!window.ExcelJS || !window.JSZip) {
       definirStatus('N\u00e3o foi poss\u00edvel carregar o leitor de Excel.', 'error');
+      atualizarProgressoImportacao(0, 'Leitor de Excel indispon\u00edvel', 'erro', true);
       return;
     }
 
+    estado.importando = true;
+    atualizarProgressoImportacao(0, `Preparando ${arquivo.name}`, 'processando', true);
     definirStatus(`Lendo as Notas de Servi\u00e7o e montando o or\u00e7amento de ${arquivo.name}\u2026`);
     try {
+      await cederInterface();
+      atualizarProgressoImportacao(8, 'Lendo o arquivo selecionado');
+      await cederInterface();
+      atualizarProgressoImportacao(16, 'Abrindo a estrutura XLSX');
       const workbook = await carregarWorkbookSeletivo(arquivo);
+      atualizarProgressoImportacao(38, 'Indexando abas e extraindo dados');
+      await cederInterface();
       const resumoNotas = extrairNotasServico(workbook.notasPlanilhas);
       const cabecalho = resumoNotas.encontrado ? null : localizarCabecalho(workbook);
       if (!resumoNotas.encontrado && !cabecalho) throw new Error('N\u00e3o encontrei abas de Notas de Servi\u00e7o nem colunas Dispositivo/Servi\u00e7o e Quantidade/Qtd. nas primeiras linhas do arquivo.');
-      const itens = [];
+      const registros = [];
       let linhasInvalidas = 0;
       if (resumoNotas.encontrado) {
         for (const registro of resumoNotas.itens) {
-          const item = criarItem({
+          registros.push({
             dispositivo: registro.dispositivo,
             unidadeInformada: registro.unidadePrincipal,
             quantidade: registro.quantidade,
             linha: registro.linha,
+            resumoCategoria: registro.categoria,
+            abasOrigem: registro.abasOrigem,
+            quantidadesPorCategoria: registro.quantidadesPorCategoria,
           });
-          item.resumoCategoria = registro.categoria;
-          item.abasOrigem = registro.abasOrigem;
-          item.quantidadesPorCategoria = registro.quantidadesPorCategoria;
-          itens.push(item);
         }
       } else {
         let vaziasSeguidas = 0;
@@ -1551,17 +1620,34 @@
             linhasInvalidas += 1;
             continue;
           }
-          itens.push(criarItem({
+          registros.push({
             dispositivo: String(dispositivo || codigo).trim(),
             codigoInformado: codigo,
             unidadeInformada,
             quantidade,
             linha,
-          }));
+          });
         }
       }
 
-      if (!itens.length) throw new Error('A planilha foi reconhecida, mas n\u00e3o cont\u00e9m linhas v\u00e1lidas com dispositivo e quantidade positiva.');
+      if (!registros.length) throw new Error('A planilha foi reconhecida, mas n\u00e3o cont\u00e9m linhas v\u00e1lidas com dispositivo e quantidade positiva.');
+      atualizarProgressoImportacao(50, `${registros.length} itens extra\u00eddos; iniciando correspond\u00eancia SICRO`);
+      await cederInterface();
+      const itens = [];
+      for (let indice = 0; indice < registros.length; indice += 1) {
+        const registro = registros[indice];
+        const item = criarItem(registro);
+        item.resumoCategoria = registro.resumoCategoria;
+        item.abasOrigem = registro.abasOrigem;
+        item.quantidadesPorCategoria = registro.quantidadesPorCategoria;
+        itens.push(item);
+        const processados = indice + 1;
+        if (processados === registros.length || processados % 8 === 0) {
+          const percentual = 50 + Math.round(processados / registros.length * 36);
+          atualizarProgressoImportacao(percentual, `Associando servi\u00e7os SICRO (${processados}/${registros.length})`);
+          await cederInterface();
+        }
+      }
       const resumoImportado = resumoNotas.encontrado ? resumoNotas : extrairResumoPlanilha(workbook.resumoPlanilha);
       associarResumoAosItens(itens, resumoImportado);
       estado.itens = itens;
@@ -1580,6 +1666,8 @@
         validas: itens.length,
         ignoradas: linhasInvalidas,
       };
+      atualizarProgressoImportacao(92, 'Renderizando or\u00e7amento e dashboard');
+      await cederInterface();
       renderizarTudo();
 
       const pendentes = itens.filter((item) => !item.selecionado).length;
@@ -1611,10 +1699,13 @@
           : ' O Dashboard usar\u00e1 os dados dispon\u00edveis no or\u00e7amento.';
       const avisoTecnico = estado.resumo?.avisos?.length ? ` Aten\u00e7\u00e3o: ${estado.resumo.avisos.join(' ')}` : '';
       definirStatus(`${reconhecimento}.${reconhecimentoUnidade}${resumoUnidades}${resumoCorrespondencia}${resumoPainel}${avisoTecnico} ${itens.length} item(ns) foram convertidos para o padr\u00e3o HID X. ${pendentes ? `${pendentes} n\u00e3o tiveram correspond\u00eancia SICRO suficiente e podem ser ajustados pelo bot\u00e3o Buscar.` : 'Todos os c\u00f3digos e unidades SICRO foram identificados; o checklist detalhado foi aberto abaixo.'}${complemento}`, pendentes ? '' : 'ok');
+      atualizarProgressoImportacao(100, 'Importa\u00e7\u00e3o conclu\u00edda', 'concluido');
     } catch (erro) {
       console.error(erro);
       definirStatus(erro.message || 'N\u00e3o foi poss\u00edvel ler o arquivo.', 'error');
+      atualizarProgressoImportacao(estado.progressoImportacao.percentual, `Erro: ${erro.message || 'n\u00e3o foi poss\u00edvel ler o arquivo'}`, 'erro');
     } finally {
+      estado.importando = false;
       for (const entrada of [document.getElementById('orcArquivo'), document.getElementById('dashboardArquivo')].filter(Boolean)) entrada.value = '';
     }
   }
@@ -2992,6 +3083,8 @@
     renderizarDashboard,
     localizarCabecalho,
     carregarWorkbookSeletivo,
+    normalizarAtualizacaoProgresso,
+    atualizarProgressoImportacao,
     get estado() { return estado; },
   };
 })();
