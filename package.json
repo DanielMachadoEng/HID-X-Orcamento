@@ -1,0 +1,45 @@
+{
+  "name": "hid-x-orcamento",
+  "version": "1.1.6",
+  "description": "Orçamento SICRO e Dashboard de drenagem com leitura automática de Notas de Serviço e consumos IPR 736.",
+  "author": "Daniel Machado",
+  "main": "main-orcamento.cjs",
+  "private": true,
+  "productName": "HID X Orçamento",
+  "scripts": {
+    "prestart": "node scripts/sync-runtime.cjs --check",
+    "start": "electron .",
+    "sync:runtime": "node scripts/sync-runtime.cjs",
+    "test": "node scripts/sync-runtime.cjs --check && node tests/orcamento-audit.test.cjs && node tests/orcamento-audit.test.cjs assets/orcamento-prototype.js",
+    "check": "node scripts/sync-runtime.cjs --check && node --check main-orcamento.cjs && node --check assets/orcamento-prototype.src.js && node --check assets/orcamento-prototype.js && node --check assets/ipr-736-consumos.js && node --check assets/sicro-catalog.js && node --check scripts/sync-runtime.cjs && node --check tests/orcamento-audit.test.cjs",
+    "predist": "node scripts/sync-runtime.cjs --check",
+    "dist": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "39.8.10",
+    "electron-builder": "26.0.12"
+  },
+  "build": {
+    "appId": "com.danielmachado.hidx.orcamento",
+    "productName": "HID X Orçamento",
+    "asar": true,
+    "files": [
+      "index.html",
+      "main-orcamento.cjs",
+      "assets/**/*",
+      "!assets/*.src.js",
+      "!assets/hid-x-logo-1024.png",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/hid-x-logo.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}
